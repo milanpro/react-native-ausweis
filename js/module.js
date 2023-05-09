@@ -59,6 +59,9 @@ class AusweisModule {
         this.eventHandlers = {};
     }
     async initAa2Sdk() {
+        if (this.currentOperation.command.cmd === commandTypes_1.Commands.init) {
+            return;
+        }
         return new Promise((resolve, reject) => {
             const initCmd = (0, commands_1.initSdkCmd)(() => {
                 this.isInitialized = true;
@@ -70,6 +73,9 @@ class AusweisModule {
         });
     }
     async disconnectAa2Sdk() {
+        if (this.currentOperation.command.cmd === commandTypes_1.Commands.disconnect) {
+            return;
+        }
         return new Promise((resolve, reject) => {
             const disconnectCmd = (0, commands_1.disconnectSdkCmd)(() => {
                 this.isInitialized = false;
@@ -82,7 +88,7 @@ class AusweisModule {
     }
     rejectCurrentOperation(errorMessage) {
         if (!this.currentOperation) {
-            throw new Error('TODO');
+            return;
         }
         this.currentOperation.callbacks.reject(new Error(errorMessage));
         this.clearCurrentOperation();
