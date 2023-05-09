@@ -59,7 +59,8 @@ class AusweisModule {
         this.eventHandlers = {};
     }
     async initAa2Sdk() {
-        if (this.currentOperation.command.cmd === commandTypes_1.Commands.init) {
+        var _a, _b;
+        if (((_b = (_a = this.currentOperation) === null || _a === void 0 ? void 0 : _a.command) === null || _b === void 0 ? void 0 : _b.cmd) === commandTypes_1.Commands.init) {
             return;
         }
         return new Promise((resolve, reject) => {
@@ -73,7 +74,8 @@ class AusweisModule {
         });
     }
     async disconnectAa2Sdk() {
-        if (this.currentOperation.command.cmd === commandTypes_1.Commands.disconnect) {
+        var _a, _b;
+        if (((_b = (_a = this.currentOperation) === null || _a === void 0 ? void 0 : _a.command) === null || _b === void 0 ? void 0 : _b.cmd) === commandTypes_1.Commands.disconnect) {
             return;
         }
         return new Promise((resolve, reject) => {
