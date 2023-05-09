@@ -5,6 +5,7 @@ import {
   BadStateMessage,
   CertificateMessage,
   ChangePinMessage,
+  DisconnectMessage,
   EnterCanMessage,
   EnterNewPinMessage,
   EnterPinMessage,
@@ -12,12 +13,18 @@ import {
   InfoMessage,
   InitMessage,
   InsertCardMessage,
+  InternalErrordMessage,
+  InvalidMessage,
   Messages,
+  ReaderListMessage,
   ReaderMessage,
+  StatusMessage,
+  UnkownCommandMessage,
 } from './messageTypes'
 
-export interface MessageEvents {
+export type MessageEvents = {
   [Messages.init]: (msg: InitMessage) => void
+  [Messages.disconnect]: (msg: DisconnectMessage) => void
   [Messages.apiLevel]: (msg: ApiLevelMessage) => void
   [Messages.badState]: (msg: BadStateMessage) => void
   [Messages.info]: (msg: InfoMessage) => void
@@ -31,4 +38,9 @@ export interface MessageEvents {
   [Messages.reader]: (msg: ReaderMessage) => void
   [Messages.enterNewPin]: (msg: EnterNewPinMessage) => void
   [Messages.changePin]: (msg: ChangePinMessage) => void
+  [Messages.internalError]: (msg: InternalErrordMessage) => void
+  [Messages.invalid]: (msg: InvalidMessage) => void
+  [Messages.readerList]: (msg: ReaderListMessage) => void
+  [Messages.status]: (msg: StatusMessage) => void
+  [Messages.unknownCommand]: (msg: UnkownCommandMessage) => void
 }

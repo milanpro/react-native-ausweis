@@ -8,27 +8,39 @@ import {
 import EventEmitter from 'events'
 import TypedEmitter from 'typed-emitter'
 import {
-  acceptAuthReqCmd,
-  enterPinCmd,
+  acceptCmd,
+  setPinCmd,
   getInfoCmd,
   runAuthCmd,
   initSdkCmd,
-  getCertificate,
-  cancelFlow,
-  enterCanCmd,
-  enterPukCmd,
-  setAccessRights,
-  setNewPin,
+  getCertificateCmd,
+  cancelFlowCmd,
+  setCanCmd,
+  setPukCmd,
+  setAccessRightsCmd,
+  setNewPinCmd,
   changePinCmd,
   insertCardHandler,
   readerHandler,
   badStateHandler,
+  getStatusCmd,
+  setAPILevelCmd,
+  getAPILevelCmd,
+  getReaderCmd,
+  getReaderListCmd,
+  getAccessRightsCmd,
+  interruptFlowCmd,
+  setCardCmd,
+  statusHandler,
+  disconnectSdkCmd,
 } from './commands'
 import {
   CommandDefinition,
+  Commands,
   disruptiveCommands,
   EventHandlers,
   HandlerDefinition,
+  VoidCommandDefinition,
 } from './commandTypes'
 import { SdkNotInitializedError } from './errors'
 import { MessageEvents } from './messageEvents'
@@ -39,7 +51,13 @@ import {
   Message,
   Messages,
 } from './messageTypes'
-import { Filter, Events, AccessRightsFields, ScannerConfig } from './types'
+import {
+  Filter,
+  Events,
+  AccessRightsFields,
+  ScannerMessages,
+  SimulatorData,
+} from './types'
 import { delay } from './utils'
 
 interface NativeEmitter {
@@ -48,6 +66,7 @@ interface NativeEmitter {
 
 interface AusweisImplementation {
   initAASdk: () => void
+  disconnectSdk: () => void
   sendCMD: (cmd: string) => void
 }
 
@@ -73,7 +92,9 @@ export class AusweisModule {
     insertCardHandler,
     readerHandler,
     badStateHandler,
+    statusHandler,
   ]
+
   private eventHandlers: Partial<EventHandlers> = {}
 
   public messageEmitter = new EventEmitter() as TypedEmitter<MessageEvents>
@@ -101,6 +122,10 @@ export class AusweisModule {
   private setupEventHandlers() {
     this.nativeEventEmitter.addListener(Events.sdkInitialized, () =>
       this.onMessage({ msg: Messages.init }),
+    )
+
+    this.nativeEventEmitter.addListener(Events.sdkDisconnected, () =>
+      this.onMessage({ msg: Messages.disconnect }),
     )
 
     this.nativeEventEmitter.addListener(Events.message, (response: string) => {
@@ -131,9 +156,11 @@ export class AusweisModule {
   }
 
   public async initAa2Sdk() {
-    return new Promise((resolve, reject) => {
-      this.nativeAa2Module.initAASdk()
+    if (this.currentOperation?.command?.cmd === Commands.init) {
+      return
+    }
 
+    return new Promise((resolve, reject) => {
       const initCmd = initSdkCmd(() => {
         this.isInitialized = true
 
@@ -146,28 +173,37 @@ export class AusweisModule {
         ...initCmd,
         callbacks: { resolve, reject },
       }
+
+      this.nativeAa2Module.initAASdk()
     })
   }
 
-  /**
-   * @see https://www.ausweisapp.bund.de/sdk/commands.html#get-info
-   */
+  public async disconnectAa2Sdk() {
+    if (this.currentOperation?.command?.cmd === Commands.disconnect) {
+      return
+    }
 
-  public async getInfo() {
-    return this.sendCmd(getInfoCmd())
-  }
+    return new Promise((resolve, reject) => {
+      const disconnectCmd = disconnectSdkCmd(() => {
+        this.isInitialized = false
 
-  /**
-   * @see https://www.ausweisapp.bund.de/sdk/commands.html#run-auth
-   */
+        this.currentOperation.callbacks.resolve()
 
-  public async startAuth(tcTokenUrl: string, config?: ScannerConfig) {
-    return this.sendCmd(runAuthCmd(tcTokenUrl, config))
+        return this.clearCurrentOperation()
+      })
+
+      this.currentOperation = {
+        ...disconnectCmd,
+        callbacks: { resolve, reject },
+      }
+
+      this.nativeAa2Module.disconnectSdk()
+    })
   }
 
   private rejectCurrentOperation(errorMessage: string) {
     if (!this.currentOperation) {
-      throw new Error('TODO')
+      return
     }
 
     this.currentOperation.callbacks.reject(new Error(errorMessage))
@@ -179,14 +215,20 @@ export class AusweisModule {
     this.currentOperation = undefined
   }
 
-  public async disconnectAa2Sdk() {}
+  private sendVoidCmd({ command }: VoidCommandDefinition): void {
+    this.log(command)
+
+    if (!this.isInitialized) {
+      throw new SdkNotInitializedError()
+    }
+
+    this.nativeAa2Module.sendCMD(JSON.stringify(command))
+  }
 
   private async sendCmd<T extends Message>({
     command,
     handler,
   }: CommandDefinition<T>): Promise<T> {
-    this.log(command)
-
     return new Promise((resolve, reject) => {
       if (!this.isInitialized) {
         return reject(new SdkNotInitializedError())
@@ -208,6 +250,7 @@ export class AusweisModule {
             },
           },
         }
+        this.log(command)
         this.nativeAa2Module.sendCMD(JSON.stringify(command))
       } else {
         this.queuedOperations.push({
@@ -223,13 +266,15 @@ export class AusweisModule {
   private onMessage(message: Message) {
     this.log(message)
 
-    // FIXME: background handlers can't be called without a "current operation"
-    const placeholderCallbacks = {
-      resolve: () => undefined,
-      reject: () => undefined,
-    }
-
     this.messageEmitter.emit(message.msg, message as any)
+
+    if (this.currentOperation) {
+      const { handler, callbacks } = this.currentOperation
+
+      if (handler.canHandle.some((msg) => msg === message.msg)) {
+        handler.handle(message, this.eventHandlers, callbacks)
+      }
+    }
 
     const { handle } =
       this.handlers.find(({ canHandle }) =>
@@ -237,27 +282,18 @@ export class AusweisModule {
       ) || {}
 
     if (handle) {
+      // FIXME: background handlers can't be called without a "current operation"
+      const placeholderCallbacks = {
+        resolve: () => undefined,
+        reject: () => undefined,
+      }
+
       return handle(
         message,
         this.eventHandlers,
-        this.currentOperation
-          ? this.currentOperation.callbacks
-          : placeholderCallbacks,
+        this.currentOperation?.callbacks ?? placeholderCallbacks,
       )
     }
-
-    if (!this.currentOperation) {
-      this.unprocessedMessages.push(message)
-      return
-    }
-
-    const { handler, callbacks } = this.currentOperation
-
-    if (handler.canHandle.some((msg) => msg === message.msg)) {
-      return handler.handle(message, this.eventHandlers, callbacks)
-    }
-
-    this.unprocessedMessages.push(message)
   }
 
   private fireNextCommand() {
@@ -271,68 +307,191 @@ export class AusweisModule {
     }
   }
 
-  private async waitTillCondition<T extends Message>(
-    filter: Filter<T>,
-    pollInterval = 1500,
-  ): Promise<T> {
-    await delay(pollInterval)
-
-    const relevantResponse = this.unprocessedMessages.filter(filter)
-
-    // TODO Drop the read message from the buffer if all was processed
-    if (relevantResponse.length === 1) {
-      this.currentOperation = undefined
-      return relevantResponse[0] as T
-    } else {
-      return this.waitTillCondition(filter, pollInterval)
-    }
+  public async checkIfCardWasRead(): Promise<
+    Messages.enterPin | Messages.enterPuk | Messages.enterCan
+  > {
+    const relevantMessages = [
+      Messages.enterPin,
+      Messages.enterPuk,
+      Messages.enterCan,
+    ]
+    return new Promise((res) => {
+      const resolveMessage = (message) => {
+        res(message)
+        relevantMessages.forEach((messageType) => {
+          this.messageEmitter.removeListener(messageType, resolveMessage)
+        })
+      }
+      relevantMessages.forEach((messageType) =>
+        this.messageEmitter.addListener(messageType, resolveMessage),
+      )
+    })
   }
 
-  public async checkIfCardWasRead() {
-    return this.waitTillCondition(
-      (message: EnterPinMessage | EnterPukMessage | EnterCanMessage) =>
-        [Messages.enterPin, Messages.enterPuk, Messages.enterCan].includes(
-          message.msg,
-        ),
+  /**
+   * @see https://www.ausweisapp.bund.de/sdk/commands.html#get-info
+   */
+
+  public async getInfo() {
+    return this.sendCmd(getInfoCmd())
+  }
+
+  /**
+   * @see https://www.ausweisapp.bund.de/sdk/commands.html#run-auth
+   */
+
+  public async startAuth(
+    tcTokenUrl: string,
+    developerMode?: boolean,
+    handleInterrupt?: boolean,
+    status?: boolean,
+    messages?: ScannerMessages,
+  ) {
+    return this.sendCmd(
+      runAuthCmd(tcTokenUrl, developerMode, handleInterrupt, status, messages),
     )
   }
 
+  /**
+   * @see https://www.ausweisapp.bund.de/sdk/commands.html#get-status
+   */
+
+  public async getStatus() {
+    return this.sendCmd(getStatusCmd())
+  }
+
+  /**
+   * @see https://www.ausweisapp.bund.de/sdk/commands.html#set-api-level
+   */
+
+  public async setAPILevel(level: number) {
+    return this.sendCmd(setAPILevelCmd(level))
+  }
+
+  /**
+   * @see https://www.ausweisapp.bund.de/sdk/commands.html#get-api-level
+   */
+
+  public async getAPILevel() {
+    return this.sendCmd(getAPILevelCmd())
+  }
+
+  /**
+   * @see https://www.ausweisapp.bund.de/sdk/commands.html#get-reader
+   */
+
+  public async getReader(name: string) {
+    return this.sendCmd(getReaderCmd(name))
+  }
+
+  /**
+   * @see https://www.ausweisapp.bund.de/sdk/commands.html#get-reader-list
+   */
+
+  public async getReaderList() {
+    return this.sendCmd(getReaderListCmd())
+  }
+
+  /**
+   * @see https://www.ausweisapp.bund.de/sdk/commands.html#set-card
+   */
+
+  public setCard(readerName: string, simulatorData?: SimulatorData) {
+    return this.sendVoidCmd(setCardCmd(readerName, simulatorData))
+  }
+
+  /**
+   * @see https://www.ausweisapp.bund.de/sdk/commands.html#set-pin
+   */
+
   // TODO Make sure 5 / 6 digits
-  public async setPin(pin: string) {
-    return this.sendCmd(enterPinCmd(pin))
+  public async setPin(pin: string | undefined) {
+    return this.sendCmd(setPinCmd(pin))
   }
 
-  // TODO Make sure 6 digits
+  /**
+   * @see https://www.ausweisapp.bund.de/sdk/commands.html#set-can
+   */
+
   public async setCan(can: string) {
-    return this.sendCmd(enterCanCmd(can))
+    // TODO Make sure 6 digits
+    return this.sendCmd(setCanCmd(can))
   }
 
-  // TODO Make sure 10 digits
+  /**
+   * @see https://www.ausweisapp.bund.de/sdk/commands.html#set-puk
+   */
+
   public async setPuk(puk: string) {
-    return this.sendCmd(enterPukCmd(puk))
+    // TODO Make sure 10 digits
+    return this.sendCmd(setPukCmd(puk))
   }
+
+  /**
+   * @see https://www.ausweisapp.bund.de/sdk/commands.html#accept
+   */
 
   public async acceptAuthRequest() {
-    return this.sendCmd(acceptAuthReqCmd())
+    return this.sendCmd(acceptCmd())
   }
+
+  /**
+   * @see https://www.ausweisapp.bund.de/sdk/commands.html#get-certificate
+   */
 
   public async getCertificate() {
-    return this.sendCmd(getCertificate())
+    return this.sendCmd(getCertificateCmd())
   }
 
-  public cancelFlow() {
-    return this.sendCmd(cancelFlow())
+  /**
+   * @see https://www.ausweisapp.bund.de/sdk/commands.html#cancel
+   */
+
+  public async cancelFlow() {
+    return this.sendCmd(cancelFlowCmd())
   }
 
-  public setAccessRights(optionalFields: Array<AccessRightsFields>) {
-    return this.sendCmd(setAccessRights(optionalFields))
+  /**
+   * @see https://www.ausweisapp.bund.de/sdk/commands.html#set-access-rights
+   */
+
+  public async setAccessRights(optionalFields: Array<AccessRightsFields>) {
+    return this.sendCmd(setAccessRightsCmd(optionalFields))
   }
 
-  public setNewPin(pin: string) {
-    return this.sendCmd(setNewPin(pin))
+  /**
+   * @see https://www.ausweisapp.bund.de/sdk/commands.html#get-access-rights
+   */
+
+  public async getAccessRights() {
+    return this.sendCmd(getAccessRightsCmd())
   }
 
-  public startChangePin(config?: ScannerConfig) {
-    return this.sendCmd(changePinCmd(config))
+  /**
+   * @see https://www.ausweisapp.bund.de/sdk/commands.html#set-new-pin
+   */
+
+  public async setNewPin(pin?: string) {
+    return this.sendCmd(setNewPinCmd(pin))
+  }
+
+  /**
+   * @see https://www.ausweisapp.bund.de/sdk/commands.html#run-change-pin
+   */
+
+  public async startChangePin(
+    handleInterrupt?: boolean,
+    status?: boolean,
+    messages?: ScannerMessages,
+  ) {
+    return this.sendCmd(changePinCmd(handleInterrupt, status, messages))
+  }
+
+  /**
+   * @see https://www.ausweisapp.bund.de/sdk/commands.html#interrupt
+   */
+
+  public interruptFlow() {
+    return this.sendVoidCmd(interruptFlowCmd())
   }
 }

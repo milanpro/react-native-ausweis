@@ -18,6 +18,7 @@ export class TestEmitter {
 export const mockAa2Impl = {
   sendCMD: async (_: Object) => {},
   initAASdk: async () => {},
+  disconnectSdk: async () => {},
 }
 
 export const emitter = new TestEmitter()
@@ -46,6 +47,7 @@ export function makeReaderVariant(cardProps?: Partial<CardInfo>) {
   const defaultReaderMsg = {
     reader: {
       attached: true,
+      insertable: true,
       card: {
         deactivated: false,
         inoperative: false,

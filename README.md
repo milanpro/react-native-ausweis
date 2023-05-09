@@ -65,9 +65,18 @@ if (!aa2Module.isInitialized) {
 ```
 
 ### Disconnect
-Note: currently it is a noop method
+To shutdown the SDK, you need to disconnect it.
+
 ```javascript
-await aa2Module.disconnectAa2Sdk()
+import { aa2Module } from '@jolocom/react-native-ausweis'
+
+if (aa2Module.isInitialized) {
+  try {
+    await aa2Module.disconnectAa2Sdk()
+  } catch (e) {
+    console.error(e)
+  }
+}
 ```
 
 ## Messages 
@@ -90,6 +99,11 @@ export enum Messages {
   reader = 'READER',
   enterNewPin = 'ENTER_NEW_PIN',
   changePin = 'CHANGE_PIN',
+  internalError = 'INTERNAL_ERROR',
+  invalid = 'INVALID',
+  readerList = 'READER_LIST',
+  status = 'STATUS',
+  unknownCommand = 'UNKNOWN_COMMAND',
 }
 ```
 
@@ -117,6 +131,7 @@ interface EventHandlers {
   handleEnterNewPin: () => void // msg ENTER_NEW_PIN
   handleChangePinCancel: () => void // msg CHANGE_PIN (success: false)
   handleChangePinSuccess: () => void // msg CHANGE_PIN (success: true)
+  handleStatus: (status: StatusMessage) => void // msg STATUS
 }
 ```
 

@@ -1,7 +1,9 @@
+import { FailureCodes } from './failure_codes'
 import { AccessRights, CardInfo } from './types'
 
 export enum Messages {
   init = 'INIT',
+  disconnect = 'DISCONNECT',
   apiLevel = 'API_LEVEL',
   badState = 'BAD_STATE',
   info = 'INFO',
@@ -15,6 +17,11 @@ export enum Messages {
   reader = 'READER',
   enterNewPin = 'ENTER_NEW_PIN',
   changePin = 'CHANGE_PIN',
+  internalError = 'INTERNAL_ERROR',
+  invalid = 'INVALID',
+  readerList = 'READER_LIST',
+  status = 'STATUS',
+  unknownCommand = 'UNKNOWN_COMMAND',
 }
 
 export interface Message {
@@ -25,6 +32,11 @@ export interface Message {
 // NOTE: Is this even a thing?
 export interface InitMessage extends Message {
   msg: Messages.init
+}
+
+// NOTE: Is this even a thing?
+export interface DisconnectMessage extends Message {
+  msg: Messages.disconnect
 }
 
 export interface ApiLevelMessage extends Message {
@@ -61,6 +73,7 @@ export interface AuthMessage extends Message {
     major: string
     message?: string
     minor?: string
+    reason?: FailureCodes
   }
 }
 
@@ -80,8 +93,9 @@ export interface AccessRightsMessage extends Message {
 interface ReaderInfo {
   name: string
   attached: boolean
+  insertable: boolean
   keypad: boolean
-  card: CardInfo
+  card: CardInfo | null
 }
 
 export interface EnterPinMessage extends Message {
@@ -107,10 +121,20 @@ export interface EnterCanMessage extends Message {
 export interface ChangePinMessage extends Message {
   msg: Messages.changePin
   success?: boolean
+  reason?: FailureCodes
 }
 
 export interface InsertCardMessage extends Message {
   msg: Messages.insertCard
+}
+
+export interface InternalErrordMessage extends Message {
+  msg: Messages.internalError
+}
+
+export interface InvalidMessage extends Message {
+  msg: Messages.invalid
+  error: string
 }
 
 interface CertificateDescription {
@@ -135,4 +159,21 @@ export interface CertificateMessage extends Message {
 
 export interface ReaderMessage extends Message, ReaderInfo {
   msg: Messages.reader
+}
+
+export interface ReaderListMessage extends Message {
+  msg: Messages.readerList
+  readers: Array<ReaderInfo>
+}
+
+export interface StatusMessage extends Message {
+  msg: Messages.status
+  workflow: string | null
+  progress: number | null
+  state: string | null
+}
+
+export interface UnkownCommandMessage extends Message {
+  msg: Messages.unknownCommand
+  error: string
 }

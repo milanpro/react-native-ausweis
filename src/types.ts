@@ -16,18 +16,30 @@ export type CardInfo = {
   retryCounter: number
 }
 
-export interface ScannerConfig {
+export interface ScannerMessages {
   sessionStarted: string
   sessionFailed: string
   sessionSucceeded: string
   sessionInProgress: string
 }
 
+export type SimulatorData = {
+  files: Array<{
+    fileId: string
+    shortFileId: string
+    content: string
+  }>
+  keys: Array<{
+    id: number
+    private: string
+  }>
+}
+
 export enum AccessRightsFields {
   Address = 'Address',
   BirthName = 'BirthName',
   FamilyName = 'FamilyName',
-  GivenNames = ' GivenNames',
+  GivenNames = 'GivenNames',
   PlaceOfBirth = 'PlaceOfBirth',
   DateOfBirth = 'DateOfBirth',
   DoctoralDegree = 'DoctoralDegree',

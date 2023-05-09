@@ -50,19 +50,26 @@ func cb(msg: Optional<UnsafePointer<Int8>>) -> Void {
 
 @objc(Aa2Sdk)
 class Aa2Sdk: NSObject {
+    func sendNotInitializedErrorEvent() {
+        Emitter.shared?.sendEvent(
+            withName: "onError",
+            body: String(data: try! JSONEncoder().encode(ErrorResponse(error: "SdkNotInitializedException")), encoding: .utf8)
+        )
+    }
+
     @objc func sendCMD(_ command: String) {
         if(ausweisapp2_is_running()) {
             ausweisapp2_send(command)
             Emitter.shared?.sendEvent(withName: "onCommandSentSuccessfully", body: nil)
         } else {
-            Emitter.shared?.sendEvent(withName: "onError", body: "SdkNotInitializedException")
+            sendNotInitializedErrorEvent()
         }
       
     }
     
     
     @objc func initAASdk() {
-        if (!ausweisapp2_init(cb)) {
+        if (!ausweisapp2_init(cb, nil)) {
             Emitter.shared?.sendEvent(
                 withName: "onError",
                 body: String(data: try! JSONEncoder().encode(ErrorResponse(error: "SdkInitializationException")), encoding: .utf8)
@@ -72,7 +79,7 @@ class Aa2Sdk: NSObject {
     
     @objc func disconnectSdk() {
         if (!ausweisapp2_is_running()) {
-            Emitter.shared?.sendEvent(withName: "onError", body: "SdkNotInitializedException")
+            sendNotInitializedErrorEvent()
         } else {
             ausweisapp2_shutdown()
             Emitter.shared?.sendEvent(withName: "onSdkDisconnect", body: nil)
